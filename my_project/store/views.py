@@ -66,7 +66,7 @@ def categories_view(request):
 
 
 @api_view(["GET", "PUT", "DELETE"])
-def category_view(request, *args, **kwargs):
+def category_by_id_view(request, *args, **kwargs):
     id = kwargs.get("id")
 
     # Get category by ID
@@ -123,13 +123,18 @@ def category_view(request, *args, **kwargs):
 def products_view(request, *args, **kwargs):
     # Get all product
     if request.method == "GET":
-        data = cache.get(key="store:products")
-        if not data:
+        if not request.query_params:
+            data = cache.get(key="store:products")
+            if not data:
+                products = Product.objects.all()
+                serializer = ProductSerializer(products, many=True)
+                data = serializer.data
+                cache.set(key="store:products", value=data, timeout=5 * 60)
+        else:
             filters = {}
-            category_name = request.query_params.get("category_name", None)
-            price_min = request.query_params.get("price_min", None)
-            price_max = request.query_params.get("price_max", None)
-
+            category_name = request.query_params.get("category_name")
+            price_min = request.query_params.get("price_min")
+            price_max = request.query_params.get("price_max")
             try:
                 if price_min:
                     filters["price__gte"] = float(price_min)
@@ -140,14 +145,20 @@ def products_view(request, *args, **kwargs):
                     message="Invalid price filter values",
                     status_code=status.HTTP_400_BAD_REQUEST,
                 )
-
             if category_name:
-                filters["category__name__icontains"] = category_name
+                try:
+                    category = Category.objects.get(name__icontains=category_name)
+                    filters["category_id"] = category.id
+                except Category.DoesNotExist:
+                    return response_wrapper(
+                        message=f"Category with name '{category_name}' not found",
+                        status_code=status.HTTP_404_NOT_FOUND,
+                    )
             products = Product.objects.filter(**filters)
             serializer = ProductSerializer(products, many=True)
-            data = serializer.data
-            cache.set(key="store:products", value=data, timeout=5 * 60)
+            data = serializer.data     
         return response_wrapper(data=data, message="Success")
+            
 
     # Post a new product
     elif request.method == "POST":
@@ -181,7 +192,7 @@ def products_view(request, *args, **kwargs):
 
 
 @api_view(["GET", "PUT", "DELETE"])
-def product_view(request, *args, **kwargs):
+def product_by_id_view(request, *args, **kwargs):
     id = kwargs.get("id")
 
     # Get category by ID
