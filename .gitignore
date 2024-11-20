@@ -4,3 +4,4 @@ migrations/
 .git
 .env
 db.*
+.idea
